@@ -485,22 +485,42 @@ spec:
           number: 9080
 EOF
 
-kubectl apply --context kind-$remoteCluster -n default -f - <<EOF
+kubectl apply --context kind-$remoteCluster -f - <<EOF
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
   name: reviews2.default.global
 spec:
   gateways:
-  - istio-multicluster-ingressgateway
+  - istio-multicluster-ingressgateway2
   hosts:
-  - reviews2.default.global
+  - reviews2.default.global2
   http:
   - route:
     - destination:
         host: reviews.default.svc.cluster.local
         port:
           number: 9080
+EOF
+
+kubectl apply --context kind-$remoteCluster -f - <<EOF
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  labels:
+    app: istio-ingressgateway
+    istio: ingressgateway
+  name: istio-multicluster-ingressgateway2
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - hosts:
+    - '*.global2'
+    port:
+      name: tls
+      number: 15443
+      protocol: TLS
 EOF
 
 kubectl port-forward --context kind-$remoteCluster -n istio-system deploy/istio-ingressgateway 15000 &
