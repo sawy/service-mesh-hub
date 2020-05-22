@@ -163,3 +163,9 @@ spec:
     hosts:
     - reviews-global.default.global
 ```
+
+=== 
+
+solve envoy crash?
+can we have more than one remote cluster with custom mesh workloads?
+problem: the sni name is single to the cluster. (for now at least)
