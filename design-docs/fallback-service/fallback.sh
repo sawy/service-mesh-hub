@@ -117,16 +117,18 @@ echo "Finished setting up cluster $remoteCluster"
 kubectl create ns --context kind-$managementPlane istio-system
 kubectl create ns --context kind-$remoteCluster istio-system
 
+ISTIO_HOME=$HOME/bin/istio-1.5.1/
+
 kubectl --context kind-$managementPlane create secret generic cacerts -n istio-system \
-    --from-file=/home/yuval/bin/istio-1.5.1/samples/certs/ca-cert.pem \
-    --from-file=/home/yuval/bin/istio-1.5.1/samples/certs/ca-key.pem \
-    --from-file=/home/yuval/bin/istio-1.5.1/samples/certs/root-cert.pem \
-    --from-file=/home/yuval/bin/istio-1.5.1/samples/certs/cert-chain.pem
+    --from-file=$ISTIO_HOME/samples/certs/ca-cert.pem \
+    --from-file=$ISTIO_HOME/samples/certs/ca-key.pem \
+    --from-file=$ISTIO_HOME/samples/certs/root-cert.pem \
+    --from-file=$ISTIO_HOME/samples/certs/cert-chain.pem
 kubectl --context kind-$remoteCluster create secret generic cacerts -n istio-system \
-    --from-file=/home/yuval/bin/istio-1.5.1/samples/certs/ca-cert.pem \
-    --from-file=/home/yuval/bin/istio-1.5.1/samples/certs/ca-key.pem \
-    --from-file=/home/yuval/bin/istio-1.5.1/samples/certs/root-cert.pem \
-    --from-file=/home/yuval/bin/istio-1.5.1/samples/certs/cert-chain.pem
+    --from-file=$ISTIO_HOME/samples/certs/ca-cert.pem \
+    --from-file=$ISTIO_HOME/samples/certs/ca-key.pem \
+    --from-file=$ISTIO_HOME/samples/certs/root-cert.pem \
+    --from-file=$ISTIO_HOME/samples/certs/cert-chain.pem
 
 values=$(mktemp devportal-XXXXXXX.yaml --tmpdir)
 cat > $values <<EOF
@@ -198,7 +200,7 @@ spec:
       selfSigned: false
 EOF
 
-istioctl manifest apply --context kind-$remoteCluster --set profile=minimal -f $values &
+$ISTIO_HOME/bin/istioctl manifest apply --context kind-$remoteCluster --set profile=minimal -f $values &
 
 values2=$(mktemp devportal-XXXXXXX.yaml --tmpdir)
 cat > $values2 <<EOF
@@ -238,7 +240,7 @@ spec:
       selfSigned: false
 EOF
 
-istioctl manifest apply --context kind-$managementPlane --set profile=minimal -f $values2
+$ISTIO_HOME/bin/istioctl manifest apply --context kind-$managementPlane --set profile=minimal -f $values2
 
 wait
 
@@ -367,6 +369,7 @@ spec:
     ports:
       http1: 32000 # Do not change this port value
 EOF
+
 kubectl apply --context kind-$managementPlane -n default -f - <<EOF
 apiVersion: networking.istio.io/v1alpha3
 kind: DestinationRule
@@ -377,8 +380,27 @@ spec:
   trafficPolicy:
     tls:
       mode: ISTIO_MUTUAL
+    outlierDetection:
+      consecutiveErrors: 7
+      interval: 5m
+      baseEjectionTime: 15m
 EOF
 
+kubectl apply --context kind-$managementPlane -n default -f - <<EOF
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: reviews-local
+spec:
+  host: reviews.default.svc.cluster.local
+  trafficPolicy:
+    outlierDetection:
+      consecutiveErrors: 7
+      interval: 5m
+      baseEjectionTime: 15m
+    tls:
+      mode: ISTIO_MUTUAL
+EOF
 
 kubectl apply --context kind-$managementPlane -n default -f - <<EOF
 apiVersion: networking.istio.io/v1alpha3
@@ -396,7 +418,7 @@ spec:
   - name: http1
     number: 9080
     protocol: http
-  resolution: STATIC
+  resolution: DNS
   addresses:
   # the IP address to which httpbin.bar.global will resolve to
   # must be unique for each remote service, within a given cluster.
@@ -469,59 +491,64 @@ spec:
               - outbound|9080||reviews.default.global
 EOF
 
-kubectl apply --context kind-$managementPlane -n default -f - <<EOF
-apiVersion: networking.istio.io/v1alpha3
-kind: VirtualService
-metadata:
-  name: reviews
-spec:
-  hosts:
-  - reviews
-  http:
-  - route:
-    - destination:
-        host: reviews2.default.global
-        port:
-          number: 9080
-EOF
+# kubectl apply --context kind-$managementPlane -n default -f - <<EOF
+# apiVersion: networking.istio.io/v1alpha3
+# kind: VirtualService
+# metadata:
+#   name: reviews
+# spec:
+#   hosts:
+#   - reviews
+#   http:
+#   - route:
+#     - destination:
+#         host: reviews2.default.global
+#         port:
+#           number: 9080
+# EOF
 
-kubectl apply --context kind-$remoteCluster -f - <<EOF
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: reviews2.default.global
-spec:
-  gateways:
-  - istio-multicluster-ingressgateway2
-  hosts:
-  - reviews2.default.global2
-  http:
-  - route:
-    - destination:
-        host: reviews.default.svc.cluster.local
-        port:
-          number: 9080
-EOF
+# kubectl apply --context kind-$remoteCluster -f - <<EOF
+# apiVersion: networking.istio.io/v1beta1
+# kind: VirtualService
+# metadata:
+#   name: reviews2.default.global
+# spec:
+#   gateways:
+#   - istio-multicluster-ingressgateway2
+#   hosts:
+#   - reviews2.default.global2
+#   http:
+#   - route:
+#     - destination:
+#         host: reviews.default.svc.cluster.local
+#         port:
+#           number: 9080
+# EOF
 
-kubectl apply --context kind-$remoteCluster -f - <<EOF
-apiVersion: networking.istio.io/v1beta1
-kind: Gateway
-metadata:
-  labels:
-    app: istio-ingressgateway
-    istio: ingressgateway
-  name: istio-multicluster-ingressgateway2
-spec:
-  selector:
-    istio: ingressgateway
-  servers:
-  - hosts:
-    - '*.global2'
-    port:
-      name: tls
-      number: 15443
-      protocol: TLS
-EOF
+# kubectl apply --context kind-$remoteCluster -f - <<EOF
+# apiVersion: networking.istio.io/v1beta1
+# kind: Gateway
+# metadata:
+#   labels:
+#     app: istio-ingressgateway
+#     istio: ingressgateway
+#   name: istio-multicluster-ingressgateway2
+# spec:
+#   selector:
+#     istio: ingressgateway
+#   servers:
+#   - hosts:
+#     - '*.global2'
+#     port:
+#       name: tls
+#       number: 15443
+#       protocol: TLS
+# EOF
+
+echo
+echo managementPlane=$managementPlane
+echo remoteCluster=$remoteCluster
+echo CLUSTER2_GW_ADDR=$CLUSTER2_GW_ADDR
 
 kubectl port-forward --context kind-$remoteCluster -n istio-system deploy/istio-ingressgateway 15000 &
 sleep 10
@@ -538,7 +565,7 @@ echo kubectl --context kind-$managementPlane logs -n default deploy/details-v1 -
 
 kubectl --context kind-$managementPlane exec -ti deploy/details-v1 -c details -- bash -c "apt update && apt install curl --yes"
 kubectl --context kind-$managementPlane exec -ti deploy/details-v1 -c details -- curl http://reviews.default.global:9080/reviews/1 -v
-kubectl --context kind-$managementPlane exec -ti deploy/details-v1 -c details -- curl http://reviews2.default.global:9080/reviews/1 -v
+# kubectl --context kind-$managementPlane exec -ti deploy/details-v1 -c details -- curl http://reviews2.default.global:9080/reviews/1 -v
 
 set +x
 echo
