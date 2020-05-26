@@ -164,8 +164,9 @@ spec:
     - reviews-global.default.global
 ```
 
-=== 
+To summarize, this uses an aggregate cluster to rotue traffic to a local instance first, and a failover when the local one fails health checks (active or passive).
+Each cluster in an aggeragate cluster has a lower priority, which means that if we have more than 1 remote cluster we need to figure out the order.
 
-solve envoy crash?
-can we have more than one remote cluster with custom mesh workloads?
-problem: the sni name is single to the cluster. (for now at least)
+Anther option is to only support 2 clusters.
+If we want to support more than 2, we can't use SNI routing. We can use regular L7 routing. or alternatively require that
+all remote services are in the same name/namespace.
